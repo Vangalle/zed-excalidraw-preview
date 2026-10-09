@@ -1,0 +1,38 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "zed-excalidraw-preview-test",
+  "elements": [
+    {
+      "id": "red-box", "type": "rectangle", "x": 0, "y": 0, "width": 200, "height": 100,
+      "angle": 0, "strokeColor": "#ff0000", "backgroundColor": "#ff0000", "fillStyle": "solid",
+      "strokeWidth": 1, "strokeStyle": "solid", "roughness": 0, "opacity": 100, "groupIds": [],
+      "frameId": null, "roundness": null, "seed": 10, "version": 1, "versionNonce": 10,
+      "isDeleted": false, "boundElements": null, "updated": 1, "link": null, "locked": false
+    },
+    {
+      "id": "blue-image", "type": "image", "x": 250, "y": 0, "width": 40, "height": 40,
+      "angle": 0, "strokeColor": "transparent", "backgroundColor": "transparent", "fillStyle": "solid",
+      "strokeWidth": 1, "strokeStyle": "solid", "roughness": 0, "opacity": 100, "groupIds": [],
+      "frameId": null, "roundness": null, "seed": 11, "version": 1, "versionNonce": 11,
+      "isDeleted": false, "boundElements": null, "updated": 1, "link": null, "locked": false,
+      "fileId": "blue", "status": "saved", "scale": [1, 1], "crop": null
+    },
+    {
+      "id": "text", "type": "text", "x": 0, "y": 130, "width": 300, "height": 30,
+      "angle": 0, "strokeColor": "#222222", "backgroundColor": "transparent", "fillStyle": "solid",
+      "strokeWidth": 1, "strokeStyle": "solid", "roughness": 0, "opacity": 100, "groupIds": [],
+      "frameId": null, "roundness": null, "seed": 12, "version": 1, "versionNonce": 12,
+      "isDeleted": false, "boundElements": null, "updated": 1, "link": null, "locked": false,
+      "text": "Hello 中文", "originalText": "Hello 中文", "fontSize": 24, "fontFamily": 1,
+      "textAlign": "left", "verticalAlign": "top", "containerId": null, "autoResize": true, "lineHeight": 1.25
+    }
+  ],
+  "appState": { "viewBackgroundColor": "#ffffff", "exportBackground": true },
+  "files": {
+    "blue": {
+      "id": "blue", "mimeType": "image/svg+xml", "created": 1,
+      "dataURL": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%3E%3Crect%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22blue%22%2F%3E%3C%2Fsvg%3E"
+    }
+  }
+}

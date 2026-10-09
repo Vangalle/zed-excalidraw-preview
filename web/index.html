@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Excalidraw · Read-only preview</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./app.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="title"><strong>Excalidraw</strong><span>Read-only preview · Source files stay unchanged</span></div>
+    <nav aria-label="Canvas view">
+      <button id="zoom-out" aria-label="Zoom out">−</button>
+      <output id="zoom" aria-label="Zoom percentage">100%</output>
+      <button id="zoom-in" aria-label="Zoom in">+</button>
+      <button id="fit">Fit to window</button>
+      <button id="reload">Reload</button>
+    </nav>
+  </header>
+  <main id="viewport" aria-label="Read-only canvas"><div id="drawing"></div></main>
+  <footer><span id="status" role="status">Rendering…</span><span>Drag to pan · Scroll to zoom · Double-click to fit</span></footer>
+</body>
+</html>

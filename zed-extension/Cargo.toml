@@ -1,0 +1,16 @@
+[package]
+name = "excalidraw-zed"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+authors = ["Caleb (Vangalle)"]
+repository = "https://github.com/Vangalle/zed-excalidraw-preview"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zed_extension_api = "=0.7.0"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

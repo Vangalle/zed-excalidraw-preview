@@ -1,0 +1,16 @@
+id = "excalidraw"
+name = "Excalidraw Preview"
+version = "0.2.0"
+schema_version = 1
+authors = ["Caleb (Vangalle)"]
+repository = "https://github.com/Vangalle/zed-excalidraw-preview"
+description = "Read-only Excalidraw and Obsidian drawing previews with visible downloads"
+languages = ["languages/excalidraw"]
+
+[language_servers.excalidraw-preview]
+name = "Excalidraw Preview"
+languages = ["Excalidraw", "JSON", "Markdown"]
+
+[grammars.json]
+repository = "https://github.com/tree-sitter/tree-sitter-json"
+rev = "254c42a6476413b776221e03982ac8ae159eeb72"

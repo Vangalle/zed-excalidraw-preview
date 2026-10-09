@@ -1,0 +1,4 @@
+name = "Excalidraw"
+grammar = "json"
+path_suffixes = ["excalidraw"]
+tab_size = 2

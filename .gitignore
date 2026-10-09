@@ -1,0 +1,8 @@
+node_modules/
+dist/
+releases/
+target/
+zed-extension/extension.wasm
+zed-extension/grammars/
+docs/superpowers/
+.DS_Store
