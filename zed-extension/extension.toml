@@ -4,7 +4,7 @@ version = "0.2.0"
 schema_version = 1
 authors = ["Caleb (Vangalle)"]
 repository = "https://github.com/Vangalle/zed-excalidraw-preview"
-description = "Read-only Excalidraw and Obsidian drawing previews with visible downloads"
+description = "Read-only Excalidraw and Obsidian drawing previews"
 languages = ["languages/excalidraw"]
 
 [language_servers.excalidraw-preview]
