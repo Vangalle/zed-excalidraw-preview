@@ -2,7 +2,7 @@
 
 Read-only previews of Excalidraw drawings in Zed, including Obsidian Excalidraw Markdown files. Render a temporary PNG in the editor or open a local browser canvas with pan, zoom, and reload.
 
-**Status:** developer preview `v0.2.1`. Registry review is pending in [PR #7939](https://github.com/zed-industries/extensions/pull/7939); not yet published in the Zed extension registry. The registry extension ID is `excalidraw`; the GitHub project name is `zed-excalidraw-preview`.
+**Status:** developer preview `v0.3.0`. Registry review is pending in [PR #7939](https://github.com/zed-industries/extensions/pull/7939); not yet published in the Zed extension registry. The registry extension ID is `excalidraw`; the GitHub project name is `zed-excalidraw-preview`.
 
 ## Zed extension
 
@@ -11,8 +11,31 @@ Install `zed-extension/` using **zed: install dev extension**. Open a drawing, i
 - **Preview Excalidraw as PNG**
 - **Preview Excalidraw in Browser**
 - **Excalidraw: View Download Log**
+- **Excalidraw: Browser Details** — selected source, version, executable path, and extension-owned cache size.
+- **Excalidraw: Clear Extension Browser Cache** — requires confirmation; never removes system browsers or shared Playwright caches.
 
-The extension downloads its versioned helper from this repository's GitHub release. Chromium is downloaded only on the first PNG preview. Setup stages, actual download percentages, cancellation, and detailed logs are exposed through Zed's native language-server UI. Bootstrap has stage-only status because Zed's extension API does not provide byte-progress callbacks.
+The extension downloads its versioned helper from this repository's GitHub release. For PNG previews it first verifies existing browsers: an explicit executable override, the exact-build shared Playwright cache, its own cached browser, then installed Google Chrome/Microsoft Edge. Verification checks actual headless canvas PNG output. Browser processes use isolated temporary profiles, never your personal browser session.
+
+Only when no compatible browser can be reused does the extension download its own Chromium. A nonblocking first-time setup notification and **Downloading Chromium** progress explicitly say rendering has not started; **Rendering PNG** is a separate stage. Real download percentages, cancellation, and concurrent log inspection remain available. Bootstrap has stage-only status because Zed's extension API does not provide byte-progress callbacks. Concurrent extension instances coordinate cache use/setup; cleanup refuses active preview leases, symlinked caches, and unknown files.
+
+Defaults require no settings changes. To select a browser explicitly or prohibit shared/system reuse, optionally configure the language server:
+
+```json
+{
+  "lsp": {
+    "excalidraw-preview": {
+      "initialization_options": {
+        "browser": {
+          "mode": "auto",
+          "executablePath": "/absolute/path/to/browser"
+        }
+      }
+    }
+  }
+}
+```
+
+Omit `executablePath` for automatic selection; set `mode` to `managed-only` to use only the extension's private browser cache. An invalid explicit override fails clearly instead of silently downloading a replacement. Restart the language server after changing these options. The extension's state and cache directories are host-assigned and cannot be redirected through `binary.env`.
 
 Previews use the currently open editor document, including unsaved changes. No source edits or automatic keymap/settings changes are performed by the extension. Ordinary Markdown files are ignored.
 

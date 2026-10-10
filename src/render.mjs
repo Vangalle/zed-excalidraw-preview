@@ -4,13 +4,19 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { startServer } from './server.mjs';
 
-export async function renderPng(file, { launchOptions = {} } = {}) {
+export async function renderPng(file, { launchOptions = {}, signal } = {}) {
+  const checkAbort = () => { if (signal?.aborted) throw new Error('Excalidraw preview cancelled.'); };
+  checkAbort();
   const server = await startServer(file);
   let browser;
   let directory;
   let timer;
+  const abort = () => { browser?.close().catch(() => {}); };
+  signal?.addEventListener('abort', abort, { once: true });
   try {
+    checkAbort();
     browser = await chromium.launch({ ...launchOptions, headless: true, args: ['--mute-audio'] });
+    checkAbort();
     const context = await browser.newContext({ serviceWorkers: 'block' });
     const origin = new URL(server.url).origin;
     await context.route('**/*', route => {
@@ -34,12 +40,14 @@ export async function renderPng(file, { launchOptions = {} } = {}) {
     return output;
   } catch (error) {
     if (directory) await rm(directory, { recursive: true, force: true });
+    checkAbort();
     if (error.message.includes("Executable doesn't exist")) {
       throw new Error('Rendering browser is not installed. Run npm run setup in the excalidraw tool directory.');
     }
     throw error;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
     if (browser) await browser.close();
     await server.close();
   }

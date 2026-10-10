@@ -84,6 +84,18 @@ test('owned-cache cleanup preserves shared/system files and denies deletion whil
   assert.equal(await readFile(f.sharedPath, 'utf8'), 'browser fixture');
 });
 
+test('explicit overrides inside the owned cache also hold a cleanup-blocking lease', async t => {
+  const { createBrowserManager } = await import('../src/browser-manager.mjs');
+  const f = await fixture(t);
+  const adapters = { candidates: () => [candidate('owned-cache', f.ownedPath)], probe, install: () => f.writeBrowser(f.ownedPath) };
+  const owned = createBrowserManager({ stateDir: f.stateDir, mode: 'managed-only' }, adapters);
+  await owned.resolve();
+  const explicit = createBrowserManager({ stateDir: f.stateDir, executablePath: f.ownedPath }, adapters);
+  const selection = await explicit.resolve();
+  const release = await explicit.acquireLease(selection);
+  try { await assert.rejects(owned.clearOwnedCache(), /use|lease/i); } finally { await release(); }
+});
+
 test('a symlinked cache and unrelated files cannot be removed', async t => {
   const { createBrowserManager } = await import('../src/browser-manager.mjs');
   const f = await fixture(t); await f.writeBrowser(f.sharedPath);
@@ -97,6 +109,24 @@ test('a symlinked cache and unrelated files cannot be removed', async t => {
   const unrelated = createBrowserManager({ stateDir: f.stateDir }, { candidates: () => [], probe });
   await assert.rejects(unrelated.clearOwnedCache(), /owned|unknown|unrecognized/i);
   assert.equal(await readFile(join(f.ownedCacheDir, 'personal-data.txt'), 'utf8'), 'keep me');
+});
+
+test('managed-only mode cannot be combined with an external executable override', async t => {
+  const { createBrowserManager } = await import('../src/browser-manager.mjs');
+  const f = await fixture(t);
+  assert.throws(() => createBrowserManager({ stateDir: f.stateDir, mode: 'managed-only', executablePath: f.sharedPath }), /combine|managed-only/i);
+});
+
+test('concurrent managers sharing an empty cache serialize setup and download only once', async t => {
+  const { createBrowserManager } = await import('../src/browser-manager.mjs');
+  const f = await fixture(t); let installs = 0;
+  const adapters = { candidates: () => [candidate('owned-cache', f.ownedPath)], probe,
+    install: async () => { installs++; await new Promise(resolve => setTimeout(resolve, 100)); await f.writeBrowser(f.ownedPath); } };
+  const first = createBrowserManager({ stateDir: f.stateDir, mode: 'managed-only' }, adapters);
+  const second = createBrowserManager({ stateDir: f.stateDir, mode: 'managed-only' }, adapters);
+  const results = await Promise.allSettled([first.resolve(), second.resolve()]);
+  assert.ok(results.every(result => result.status === 'fulfilled'), JSON.stringify(results));
+  assert.equal(installs, 1);
 });
 
 test('pinned shared-cache discovery exposes browser executable paths without scanning profiles', async () => {

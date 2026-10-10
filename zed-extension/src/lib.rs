@@ -47,10 +47,29 @@ fn runtime_environment(root: &Path) -> Vec<(String, String)> {
             root.join("browsers").to_string_lossy().into_owned(),
         ),
         (
+            "EXCALIDRAW_MANAGED_CACHE_DIR".into(),
+            root.join("browsers").to_string_lossy().into_owned(),
+        ),
+        (
             "EXCALIDRAW_STATE_DIR".into(),
             root.join("state").to_string_lossy().into_owned(),
         ),
     ]
+}
+
+fn server_environment(
+    root: &Path,
+    shell: Vec<(String, String)>,
+    extra: Option<&HashMap<String, String>>,
+) -> Vec<(String, String)> {
+    let mut env: HashMap<_, _> = shell.into_iter().collect();
+    if let Some(extra) = extra {
+        env.extend(extra.clone());
+    }
+    // State and cache ownership are assigned by the host, not arbitrary binary.env.
+    // Browser preferences belong in initialization_options.browser instead.
+    env.extend(runtime_environment(root));
+    env.into_iter().collect()
 }
 
 fn server_arguments(script: &str, extra: Option<Vec<String>>) -> Vec<String> {
@@ -126,21 +145,21 @@ impl ExcalidrawExtension {
                     return Err("The downloaded preview runtime is incomplete. Retry the language server download.".into());
                 }
                 fs::write(ready, manifest.version.as_bytes()).map_err(|error| error.to_string())?;
-                record_stage(&root, "Preview runtime downloaded. Chromium will be installed lazily with native progress on first PNG preview.")?;
+                record_stage(&root, "Preview runtime downloaded. Compatible existing browsers will be reused; Chromium is downloaded with native progress only when necessary.")?;
             } else {
                 record_stage(&root, "Using the cached preview runtime.")?;
             }
             server.to_string_lossy().into_owned()
         };
-        let mut env: HashMap<_, _> = worktree.shell_env().into_iter().collect();
-        env.extend(runtime_environment(&root));
-        if let Some(extra) = binary.as_ref().and_then(|settings| settings.env.as_ref()) {
-            env.extend(extra.clone());
-        }
+        let env = server_environment(
+            &root,
+            worktree.shell_env(),
+            binary.as_ref().and_then(|settings| settings.env.as_ref()),
+        );
         Ok(zed::Command {
             command: node,
             args: server_arguments(&script, binary.and_then(|settings| settings.arguments)),
-            env: env.into_iter().collect(),
+            env,
         })
     }
 }
@@ -148,6 +167,14 @@ impl ExcalidrawExtension {
 impl zed::Extension for ExcalidrawExtension {
     fn new() -> Self {
         Self
+    }
+
+    fn language_server_initialization_options(
+        &mut self,
+        id: &zed::LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> zed::Result<Option<zed::serde_json::Value>> {
+        Ok(LspSettings::for_worktree(id.as_ref(), worktree)?.initialization_options)
     }
 
     fn language_server_command(
@@ -213,9 +240,41 @@ mod tests {
             root.join("browsers").to_string_lossy().into_owned()
         )));
         assert!(env.contains(&(
+            "EXCALIDRAW_MANAGED_CACHE_DIR".into(),
+            root.join("browsers").to_string_lossy().into_owned()
+        )));
+        assert!(env.contains(&(
             "EXCALIDRAW_STATE_DIR".into(),
             root.join("state").to_string_lossy().into_owned()
         )));
+    }
+
+    #[test]
+    fn private_cache_ownership_cannot_be_redirected_by_binary_environment() {
+        let root = Path::new("/extension work directory");
+        let extra = HashMap::from([
+            (
+                "EXCALIDRAW_MANAGED_CACHE_DIR".into(),
+                "/shared cache".into(),
+            ),
+            (
+                "EXCALIDRAW_STATE_DIR".into(),
+                "/other software/state".into(),
+            ),
+            ("CUSTOM_OPTION".into(), "preserved".into()),
+        ]);
+        let env: HashMap<_, _> = server_environment(root, vec![], Some(&extra))
+            .into_iter()
+            .collect();
+        assert_eq!(
+            env["EXCALIDRAW_MANAGED_CACHE_DIR"],
+            "/extension work directory/browsers"
+        );
+        assert_eq!(
+            env["EXCALIDRAW_STATE_DIR"],
+            "/extension work directory/state"
+        );
+        assert_eq!(env["CUSTOM_OPTION"], "preserved");
     }
 
     #[test]

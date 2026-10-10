@@ -63,6 +63,7 @@ export async function probeBrowser(candidate, signal) {
 export function createBrowserManager({ stateDir, mode = 'auto', executablePath } = {}, adapters = {}) {
   if (!['auto', 'managed-only'].includes(mode)) throw new Error('browser.mode must be "auto" or "managed-only".');
   if (executablePath !== undefined && (typeof executablePath !== 'string' || !isAbsolute(executablePath))) throw new Error('browser.executablePath must be an absolute path.');
+  if (mode === 'managed-only' && executablePath) throw new Error('Cannot combine managed-only browser mode with an external executablePath override.');
   const cache = createOwnedBrowserCache(stateDir, [bundled.defaultRegistryDirectory()]);
   const discover = adapters.candidates ?? discoverBrowserCandidates;
   const probe = adapters.probe ?? probeBrowser;
@@ -78,7 +79,7 @@ export function createBrowserManager({ stateDir, mode = 'auto', executablePath }
     let release;
     try {
       await access(candidate.path, constants.X_OK);
-      if (candidate.source === 'owned-cache' && lease) release = await cache.acquireLease();
+      if (lease && (candidate.source === 'owned-cache' || await cache.containsExecutable(candidate.path))) release = await cache.acquireLease(options.signal);
       const result = await probe(candidate, options.signal);
       cancelled(options.signal);
       checks.push({ source: candidate.source, path: candidate.path, usable: true, version: result.version });
@@ -116,23 +117,30 @@ export function createBrowserManager({ stateDir, mode = 'auto', executablePath }
         if (verified) return finish(verified, options);
       }
       cancelled(options.signal);
-      await options.onPhase?.('download');
-      await report('No compatible existing browser was found. First-time setup: downloading Chromium (approximately 100–150 MB). PNG rendering has NOT started. Future previews will reuse this browser.', options);
       const install = adapters.install ?? (async path => {
         const command = chromiumInstallCommand();
         await runLoggedCommand(command.command, command.args, { ...options, env: { PLAYWRIGHT_BROWSERS_PATH: path } });
       });
       const installed = await cache.install(async path => {
+        // A different worktree may have finished setup while this one waited
+        // for the cross-process lock. Recheck before announcing/downloading.
+        for (const entry of (await candidates()).filter(entry => entry.source === 'owned-cache')) {
+          const verified = await verify(entry, options, false);
+          if (verified) return verified;
+        }
+        cancelled(options.signal);
+        await options.onPhase?.('download');
+        await report('No compatible existing browser was found. First-time setup: downloading Chromium (approximately 100–150 MB). PNG rendering has NOT started. Future previews will reuse this browser.', options);
         await install(path);
         for (const entry of (await candidates()).filter(entry => entry.source === 'owned-cache')) {
           const verified = await verify(entry, options, false);
           if (verified) return verified;
         }
         throw new Error('Downloaded Chromium failed PNG compatibility verification. See the download log.');
-      });
+      }, { signal: options.signal });
       return finish(installed, options);
     },
-    async acquireLease(candidate) { return candidate.source === 'owned-cache' ? cache.acquireLease() : async () => {}; },
+    async acquireLease(candidate, signal) { return candidate.source === 'owned-cache' || await cache.containsExecutable(candidate.path) ? cache.acquireLease(signal) : async () => {}; },
     async details() {
       return { policy: mode, configuredExecutable: executablePath ?? null, selected: selected ? { source: selected.source, version: selected.version, path: selected.path } : null, isolatedTemporaryProfile: true, ownedCache: await cache.details(), lastChecks: checks };
     },
@@ -142,6 +150,10 @@ export function createBrowserManager({ stateDir, mode = 'auto', executablePath }
       await writeFile(file, JSON.stringify(await this.details(), null, 2) + '\n', { mode: 0o600 });
       return file;
     },
-    async clearOwnedCache() { await cache.clear(); if (selected?.source === 'owned-cache') selected = undefined; },
+    async clearOwnedCache() {
+      const invalidate = selected && (selected.source === 'owned-cache' || await cache.containsExecutable(selected.path));
+      await cache.clear();
+      if (invalidate) selected = undefined;
+    },
   };
 }

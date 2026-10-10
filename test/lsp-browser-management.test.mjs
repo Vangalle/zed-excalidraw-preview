@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
 import { createOwnedBrowserCache } from '../src/browser-cache.mjs';
 import { startLsp, openDocument } from './helpers/lsp-client.mjs';
 
@@ -42,6 +44,20 @@ test('confirmed cleanup removes only the extension-owned cache and refuses activ
   assert.equal(result.cleared, true);
   await assert.rejects(access(f.cache.path));
   assert.equal(await readFile(f.sentinel, 'utf8'), 'keep');
+});
+
+test('explicit browser renders even when the process default cache is empty', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'explicit-browser-render-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const executablePath = chromium.executablePath();
+  const client = await startLsp(t, { stateDir: join(root, 'state'), requestTimeout: 45_000, env: { PLAYWRIGHT_BROWSERS_PATH: join(root, 'empty-cache') }, initializationOptions: { browser: { executablePath } } });
+  const uri = 'file:///explicit-browser-render.excalidraw';
+  openDocument(client, uri, await readFile(new URL('./fixtures/demo.excalidraw', import.meta.url), 'utf8'));
+  const result = await client.request('workspace/executeCommand', { command: 'excalidraw.preview.png', arguments: [uri] });
+  t.after(() => rm(dirname(fileURLToPath(result.uri)), { recursive: true, force: true }));
+  assert.equal((await readFile(new URL(result.uri))).readUInt32BE(16), 340);
+  const report = await client.request('workspace/executeCommand', { command: 'excalidraw.browserInfo' });
+  assert.equal(JSON.parse(await readFile(new URL(report.uri), 'utf8')).selected.source, 'configured');
 });
 
 test('invalid explicit browser path never triggers a download or opens a PNG', async t => {

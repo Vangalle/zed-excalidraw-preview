@@ -27,7 +27,7 @@ test('release archive is self-contained and excludes private/development files',
   const unpack = join(dir, 'unpacked'); await mkdir(unpack);
   await exec('tar', ['-xzf', archive, '-C', unpack]);
   const metadata = JSON.parse(await readFile(join(unpack, 'runtime.json'), 'utf8'));
-  assert.equal(metadata.version, '0.2.1');
+  assert.equal(metadata.version, '0.3.0');
   assert.match(await readFile(join(unpack, 'LICENSE'), 'utf8'), /MIT License/);
   assert.equal(JSON.parse(await readFile(join(unpack, 'package.json'), 'utf8')).license, 'MIT');
   const packagedCli = join(unpack, 'node_modules/playwright/cli.js');

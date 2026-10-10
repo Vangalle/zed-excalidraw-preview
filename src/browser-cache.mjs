@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile, lstat, realpath, rm } from 'node:f
 import { basename, dirname, join, resolve, sep, parse } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const OWNER = 'excalidraw-preview';
 const MARKER = '.excalidraw-cache-owner.json';
@@ -67,18 +68,23 @@ export function createOwnedBrowserCache(stateDir, sharedRoots = []) {
     catch (error) { if (error.code !== 'EEXIST') throw error; await ownership(); }
   }
 
-  async function locked(operation) {
+  async function locked(operation, { signal, wait = true } = {}) {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    try { await mkdir(lock, { mode: 0o700 }); }
-    catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const lockInfo = await lstat(lock);
+    const deadline = Date.now() + 300_000;
+    for (;;) {
+      if (signal?.aborted) throw new Error('Excalidraw preview cancelled.');
+      try { await mkdir(lock, { mode: 0o700 }); break; }
+      catch (error) { if (error.code !== 'EEXIST') throw error; }
+      let lockInfo;
+      try { lockInfo = await lstat(lock); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
       if (lockInfo.isSymbolicLink() || !lockInfo.isDirectory()) throw new Error('Refusing a symlinked browser-cache lock.');
       let data;
-      try { data = await readMetadata(join(lock, 'owner.json')); } catch { throw new Error('Browser cache operation is busy in another window.'); }
-      if (data.owner !== OWNER || !Number.isInteger(data.pid) || alive(data.pid)) throw new Error('Browser cache operation is busy in another window.');
-      await rm(lock, { recursive: true });
-      await mkdir(lock, { mode: 0o700 });
+      try { data = await readMetadata(join(lock, 'owner.json')); }
+      catch (error) { if (error.code !== 'ENOENT') throw new Error('Browser cache operation has unrecognized ownership metadata.'); }
+      if (data && (data.owner !== OWNER || !Number.isInteger(data.pid) || data.pid <= 0)) throw new Error('Browser cache operation has unrecognized ownership metadata.');
+      if (data && !alive(data.pid)) { await rm(lock, { recursive: true, force: true }); continue; }
+      if (!wait || Date.now() > deadline) throw new Error('Browser cache operation is busy in another window.');
+      try { await delay(50, undefined, { signal }); } catch { throw new Error('Excalidraw preview cancelled.'); }
     }
     try {
       await writeFile(join(lock, 'owner.json'), JSON.stringify({ owner: OWNER, pid: process.pid }), { mode: 0o600 });
@@ -115,10 +121,17 @@ export function createOwnedBrowserCache(stateDir, sharedRoots = []) {
 
   return {
     path,
-    async install(operation) {
-      return locked(async () => { await prepare(); return operation(path); });
+    async containsExecutable(file) {
+      try {
+        const info = await lstat(path);
+        if (!info.isDirectory() || info.isSymbolicLink()) return false;
+        return inside(await realpath(file), await realpath(path));
+      } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
     },
-    async acquireLease() {
+    async install(operation, options) {
+      return locked(async () => { await prepare(); return operation(path); }, options);
+    },
+    async acquireLease(signal) {
       return locked(async () => {
         await ownership();
         await liveLeases();
@@ -126,7 +139,7 @@ export function createOwnedBrowserCache(stateDir, sharedRoots = []) {
         const file = join(path, LEASES, `${process.pid}-${randomBytes(8).toString('hex')}`);
         await writeFile(file, '', { flag: 'wx', mode: 0o600 });
         return async () => { await rm(file, { force: true }); };
-      });
+      }, { signal });
     },
     async details() {
       try {
@@ -143,7 +156,7 @@ export function createOwnedBrowserCache(stateDir, sharedRoots = []) {
         await ownership();
         if ((await liveLeases()).length) throw new Error('Browser cache is in use by an active preview lease.');
         await rm(path, { recursive: true });
-      });
+      }, { wait: false });
     },
   };
 }

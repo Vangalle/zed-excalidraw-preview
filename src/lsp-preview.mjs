@@ -53,13 +53,13 @@ export function createPreviewService(stateDir) {
         checkAbort(signal);
         if (mode !== 'png') onProgress({ message: 'Starting the local read-only browser preview.' });
         if (mode === 'png') {
-          const release = await manager.acquireLease(selected);
+          const release = await manager.acquireLease(selected, signal);
           let output;
           try {
             await onPhase('render');
             onProgress({ message: 'Rendering the current editor snapshot as PNG.' });
             checkAbort(signal);
-            output = await renderPng(source.file, { launchOptions: selected.launchOptions });
+            output = await renderPng(source.file, { launchOptions: selected.launchOptions, signal });
           } finally { await release(); }
           const current = getDocument();
           if (signal?.aborted || !current || current.version !== source.version) {

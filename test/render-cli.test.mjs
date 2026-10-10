@@ -58,6 +58,15 @@ test('exports real shapes, text and embedded image to a unique temp PNG, entirel
   assert.deepEqual(await readFile(fixture), before);
 });
 
+test('cancelled renderer does not launch or return a PNG', async () => {
+  const { renderPng } = await import('../src/render.mjs');
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(async () => {
+    const output = await renderPng(fixture, { signal: controller.signal });
+    await rm(dirname(output), { recursive: true, force: true });
+  }, /cancel/i);
+});
+
 test('browser viewer supports read-only zoom, pan, reset and reload without external requests', async t => {
   const { startServer } = await import('../src/server.mjs');
   const server = await startServer(fixture);

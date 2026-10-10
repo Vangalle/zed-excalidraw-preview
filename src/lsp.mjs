@@ -34,7 +34,7 @@ connection.onInitialize(params => {
   previews.configureBrowser(params.initializationOptions?.browser ?? {});
   return {
     capabilities: { textDocumentSync: TextDocumentSyncKind.Full, codeActionProvider: true, executeCommandProvider: { commands: commands.map(([, command]) => command) } },
-    serverInfo: { name: 'Excalidraw Preview', version: '0.2.1' },
+    serverInfo: { name: 'Excalidraw Preview', version: '0.3.0' },
   };
 });
 
