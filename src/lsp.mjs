@@ -29,7 +29,7 @@ const commands = [
 
 connection.onInitialize(() => ({
   capabilities: { textDocumentSync: TextDocumentSyncKind.Full, codeActionProvider: true, executeCommandProvider: { commands: commands.map(([, command]) => command) } },
-  serverInfo: { name: 'Excalidraw Preview', version: '0.2.0' },
+  serverInfo: { name: 'Excalidraw Preview', version: '0.2.1' },
 }));
 
 async function validate(document) {

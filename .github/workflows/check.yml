@@ -24,6 +24,8 @@ jobs:
       - run: npm test
       - run: npm audit
       - run: npm run package:runtime
+      - name: Check packaged first-run Chromium download
+        run: EXCALIDRAW_TEST_COLD_DOWNLOAD=1 node --test test/runtime-package.test.mjs
 
   extension:
     runs-on: ubuntu-latest

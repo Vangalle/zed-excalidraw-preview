@@ -2,7 +2,7 @@
 
 Read-only previews of Excalidraw drawings in Zed, including Obsidian Excalidraw Markdown files. Render a temporary PNG in the editor or open a local browser canvas with pan, zoom, and reload.
 
-**Status:** developer preview `v0.2.0`. Not yet published in the Zed extension registry. The registry extension ID is `excalidraw`; the GitHub project name is `zed-excalidraw-preview`.
+**Status:** developer preview `v0.2.1`. Registry review is pending in [PR #7939](https://github.com/zed-industries/extensions/pull/7939); not yet published in the Zed extension registry. The registry extension ID is `excalidraw`; the GitHub project name is `zed-excalidraw-preview`.
 
 ## Zed extension
 
@@ -50,7 +50,7 @@ cargo build --manifest-path zed-extension/Cargo.toml --target wasm32-wasip2 --re
 npm run package:runtime
 ```
 
-The self-contained runtime archive is written under `releases/`. It excludes private drawings, runtime state, tests, development scripts, and internal notes. A required manual dev-extension check in Zed must precede a registry submission.
+The self-contained runtime archive is written under `releases/`. It excludes private drawings, runtime state, project tests, development scripts, and internal notes. Selected dependency packages are preserved intact: directories named `test` may contain required runtime modules. Archive tests execute the packaged Playwright CLI, not just its development-directory counterpart. A required manual dev-extension check in Zed must precede a registry submission.
 
 ## License
 

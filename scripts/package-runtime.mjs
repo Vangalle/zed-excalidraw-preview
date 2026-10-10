@@ -48,7 +48,9 @@ export async function buildRuntimeArchive({ outputDir = join(root, 'releases') }
       const from = join(root, 'node_modules', name);
       const info = JSON.parse(await readFile(join(from, 'package.json'), 'utf8'));
       dependencies[name] = info.version;
-      await copy(from, join(staging, 'node_modules', name));
+      // Dependency directories named "test" can be required runtime code
+      // (for example Playwright's lib/mcp/test/testBackend). Preserve packages.
+      await cp(from, join(staging, 'node_modules', name), { recursive: true });
     }
     await writeFile(join(staging, 'package.json'), JSON.stringify({ name: 'excalidraw-preview-runtime', version: metadata.version, private: true, license: metadata.license, type: 'module', engines: metadata.engines, dependencies }, null, 2));
     await writeFile(join(staging, 'runtime.json'), JSON.stringify({ version: metadata.version, entry: 'src/lsp.mjs', playwright: dependencies.playwright }, null, 2));
