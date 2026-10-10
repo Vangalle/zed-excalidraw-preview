@@ -25,12 +25,12 @@ export async function appendDownloadLog(path, message) {
   try { await writing; } finally { if (logWrites.get(path) === writing) logWrites.delete(path); }
 }
 
-export async function runLoggedCommand(command, args, { logPath, onProgress = () => {}, signal } = {}) {
+export async function runLoggedCommand(command, args, { logPath, onProgress = () => {}, signal, env = {} } = {}) {
   if (signal?.aborted) throw cancelledError();
   await appendDownloadLog(logPath, 'Starting renderer dependency installation.');
   if (signal?.aborted) throw cancelledError();
   const grouped = process.platform !== 'win32';
-  const child = spawn(command, args, { detached: grouped, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1' } });
+  const child = spawn(command, args, { detached: grouped, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env, CI: '1' } });
   let killed = false;
   let killTimer;
   let error;
