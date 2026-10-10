@@ -20,7 +20,7 @@ test('real LSP exposes previews only for drawing documents and validates synchro
   const diagnostic = await client.waitFor(event => event.method === 'textDocument/publishDiagnostics' && event.params.uri === drawing && event.params.version === 1);
   assert.match(diagnostic.params.diagnostics[0].message, /JSON/);
   const actions = await client.request('textDocument/codeAction', actionParams(drawing));
-  assert.deepEqual(actions.map(action => action.command.command), ['excalidraw.preview.png', 'excalidraw.preview.browser', 'excalidraw.downloadLog']);
+  assert.deepEqual(actions.map(action => action.command.command), ['excalidraw.preview.png', 'excalidraw.preview.browser', 'excalidraw.downloadLog', 'excalidraw.browserInfo', 'excalidraw.clearBrowserCache']);
   const json = await readFile(fixture, 'utf8');
   client.notify('textDocument/didChange', { textDocument: { uri: drawing, version: 2 }, contentChanges: [{ text: json }] });
   const cleared = await client.waitFor(event => event.method === 'textDocument/publishDiagnostics' && event.params.uri === drawing && event.params.version === 2);
@@ -53,6 +53,16 @@ test('PNG uses unsaved editor snapshot, reports native progress, and log remains
   assert.ok(client.events.some(event => event.method === '$/progress' && event.params.value.kind === 'report'));
   assert.ok(client.events.some(event => event.method === '$/progress' && event.params.value.kind === 'end'));
   assert.ok(client.events.some(event => event.method === 'window/logMessage' && /Chromium/.test(event.params.message)));
+  const titles = client.events.filter(event => event.method === '$/progress' && event.params.value.kind === 'begin').map(event => event.params.value.title);
+  assert.ok(titles.includes('Excalidraw: Checking existing browsers'));
+  assert.ok(titles.includes('Excalidraw: Rendering PNG'));
+  assert.ok(!titles.includes('Excalidraw: Downloading Chromium'));
+  assert.ok(!client.events.some(event => event.method === 'window/showMessageRequest' && /first-time setup/i.test(event.params.message)));
+  const details = await client.request('workspace/executeCommand', { command: 'excalidraw.browserInfo', arguments: [] });
+  const info = JSON.parse(await readFile(new URL(details.uri), 'utf8'));
+  assert.ok(info.selected.path);
+  assert.ok(info.selected.version);
+  assert.equal(info.isolatedTemporaryProfile, true);
 });
 
 test('Obsidian editor snapshot opens a local browser URL through showDocument without launching applications', async t => {
@@ -61,7 +71,7 @@ test('Obsidian editor snapshot opens a local browser URL through showDocument wi
   const md = `---\nexcalidraw-plugin: parsed\n---\n## Drawing\n\`\`\`compressed-json\n${LZString.compressToBase64(json)}\n\`\`\``;
   const uri = 'file:///not-a-real-file/Obsidian drawing.md';
   openDocument(client, uri, md, 'markdown');
-  assert.equal((await client.request('textDocument/codeAction', actionParams(uri))).length, 3);
+  assert.equal((await client.request('textDocument/codeAction', actionParams(uri))).length, 5);
   const result = await client.request('workspace/executeCommand', { command: 'excalidraw.preview.browser', arguments: [uri] });
   assert.equal(new URL(result.uri).hostname, '127.0.0.1');
   assert.equal((await (await fetch(`${result.uri}scene`)).json()).elements.length, 3);

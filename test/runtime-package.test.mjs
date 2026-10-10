@@ -18,6 +18,7 @@ test('release archive is self-contained and excludes private/development files',
   const { stdout } = await exec('tar', ['-tzf', archive], { maxBuffer: 4 * 1024 * 1024 });
   const files = stdout.split('\n');
   assert.ok(files.some(path => path.endsWith('src/lsp.mjs')));
+  for (const module of ['browser-manager.mjs', 'browser-cache.mjs', 'lsp-progress.mjs']) assert.ok(files.some(path => path.endsWith(`src/${module}`)), `Packaged runtime must include ${module}`);
   assert.ok(files.some(path => path.endsWith('dist/app.js')));
   // Project-private/development roots must be absent; dependency directories
   // named "test" can contain real runtime code and must not be filtered out.
@@ -37,7 +38,7 @@ test('release archive is self-contained and excludes private/development files',
   const client = await startLsp(t, { script: join(unpack, 'src/lsp.mjs'), stateDir: join(dir, 'state') });
   const uri = 'file:///release.excalidraw';
   openDocument(client, uri, await readFile(new URL('./fixtures/demo.excalidraw', import.meta.url), 'utf8'));
-  assert.equal((await client.request('textDocument/codeAction', actionParams(uri))).length, 3);
+  assert.equal((await client.request('textDocument/codeAction', actionParams(uri))).length, 5);
   const browserResult = await client.request('workspace/executeCommand', { command: 'excalidraw.preview.browser', arguments: [uri] });
   const browser = await chromium.launch({ headless: true, args: ['--mute-audio'] });
   t.after(() => browser.close());
@@ -56,10 +57,10 @@ test('packaged first PNG installs Chromium from an empty cache and exposes live 
   const { buildRuntimeArchive } = await import('../scripts/package-runtime.mjs');
   const root = await mkdtemp(join(tmpdir(), 'packaged cold download '));
   const cleanup = [];
-  let output;
+  const outputs = [];
   t.after(async () => {
     for (const fn of cleanup.reverse()) await fn();
-    if (output) await rm(dirname(output), { recursive: true, force: true });
+    for (const output of outputs) await rm(dirname(output), { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   });
   const archive = await buildRuntimeArchive({ outputDir: root });
@@ -67,7 +68,8 @@ test('packaged first PNG installs Chromium from an empty cache and exposes live 
   await exec('tar', ['-xzf', archive, '-C', unpack]);
   const client = await startLsp({ after: fn => cleanup.push(fn) }, {
     script: join(unpack, 'src/lsp.mjs'), stateDir: join(root, 'state'), requestTimeout: 220_000,
-    env: { PLAYWRIGHT_BROWSERS_PATH: join(root, 'empty browser cache'), NODE_PATH: '' },
+    env: { PLAYWRIGHT_BROWSERS_PATH: join(root, 'unrelated empty browser cache'), NODE_PATH: '' },
+    initializationOptions: { browser: { mode: 'managed-only' } },
   });
   const uri = 'file:///packaged-first-run.excalidraw';
   openDocument(client, uri, await readFile(new URL('./fixtures/demo.excalidraw', import.meta.url), 'utf8'));
@@ -76,10 +78,31 @@ test('packaged first PNG installs Chromium from an empty cache and exposes live 
   const log = await client.request('workspace/executeCommand', { command: 'excalidraw.downloadLog', arguments: [] });
   assert.match(new URL(log.uri).pathname, /download\.log$/);
   const result = await rendering;
-  output = fileURLToPath(result.uri);
+  const output = fileURLToPath(result.uri); outputs.push(output);
   const png = await readFile(output);
   assert.equal(png.readUInt32BE(16), 340);
   assert.equal(png.readUInt32BE(20), 200);
   assert.ok(client.events.some(event => event.method === '$/progress' && event.params.value.percentage === 100));
   assert.ok(!(await readFile(new URL(log.uri), 'utf8')).includes('Cannot find module'));
+  const begins = client.events.filter(event => event.method === '$/progress' && event.params.value.kind === 'begin');
+  const download = begins.findIndex(event => event.params.value.title === 'Excalidraw: Downloading Chromium');
+  const render = begins.findIndex(event => event.params.value.title === 'Excalidraw: Rendering PNG');
+  assert.ok(download >= 0 && render > download);
+  const notices = client.events.filter(event => event.method === 'window/showMessageRequest' && /first-time setup/i.test(event.params.message));
+  assert.equal(notices.length, 1);
+  assert.match(notices[0].params.message, /rendering has not started/i);
+  const infoDoc = await client.request('workspace/executeCommand', { command: 'excalidraw.browserInfo' });
+  const info = JSON.parse(await readFile(new URL(infoDoc.uri), 'utf8'));
+  assert.equal(info.selected.source, 'owned-cache');
+  assert.ok(info.ownedCache.bytes > 50 * 1024 * 1024);
+  const warm = await client.request('workspace/executeCommand', { command: 'excalidraw.preview.png', arguments: [uri] }); outputs.push(fileURLToPath(warm.uri));
+  assert.equal(client.events.filter(event => event.method === 'window/showMessageRequest' && /first-time setup/i.test(event.params.message)).length, 1);
+  const second = await startLsp({ after: fn => cleanup.push(fn) }, { script: join(unpack, 'src/lsp.mjs'), stateDir: join(root, 'state'), requestTimeout: 30_000, initializationOptions: { browser: { mode: 'managed-only' } } });
+  openDocument(second, uri, await readFile(new URL('./fixtures/demo.excalidraw', import.meta.url), 'utf8'));
+  const reused = await second.request('workspace/executeCommand', { command: 'excalidraw.preview.png', arguments: [uri] }); outputs.push(fileURLToPath(reused.uri));
+  assert.ok(!second.events.some(event => event.method === 'window/showMessageRequest' && /first-time setup/i.test(event.params.message)));
+  assert.equal((await readFile(new URL(log.uri), 'utf8')).split('Starting renderer dependency installation.').length - 1, 1);
+  const cleared = await second.request('workspace/executeCommand', { command: 'excalidraw.clearBrowserCache' });
+  assert.equal(cleared.cleared, false);
+  await access(info.selected.path);
 });

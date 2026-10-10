@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 const modules = ['lz-string', 'playwright', 'playwright-core', 'vscode-jsonrpc', 'vscode-languageserver', 'vscode-languageserver-protocol', 'vscode-languageserver-types', 'vscode-languageserver-textdocument'];
-const sources = ['cli.mjs', 'downloads.mjs', 'launch.mjs', 'lsp.mjs', 'lsp-preview.mjs', 'obsidian.mjs', 'obsidian-decode-worker.mjs', 'render.mjs', 'scene.mjs', 'server.mjs'];
+const sources = ['browser-cache.mjs', 'browser-manager.mjs', 'lsp-progress.mjs', 'cli.mjs', 'downloads.mjs', 'launch.mjs', 'lsp.mjs', 'lsp-preview.mjs', 'obsidian.mjs', 'obsidian-decode-worker.mjs', 'render.mjs', 'scene.mjs', 'server.mjs'];
 const exclude = new Set(['docs', 'test', 'tests', '.git', '.DS_Store']);
 const copy = (from, to) => cp(from, to, { recursive: true, filter: path => !exclude.has(basename(path)) });
 

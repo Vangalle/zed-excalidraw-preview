@@ -3,7 +3,6 @@ import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { StringDecoder } from 'node:string_decoder';
-import { chromium } from 'playwright';
 
 const require = createRequire(import.meta.url);
 const logWrites = new Map();
@@ -97,26 +96,3 @@ export function chromiumInstallCommand() {
   return { command: process.execPath, args: [cli, 'install', 'chromium', '--only-shell'] };
 }
 
-let chromiumReady = false;
-export async function ensureChromium({ logPath, onProgress = () => {}, signal } = {}) {
-  if (signal?.aborted) throw cancelledError();
-  const report = async message => { await appendDownloadLog(logPath, message); onProgress({ message }); };
-  if (!chromiumReady) {
-    await report('Checking headless Chromium.');
-    try {
-      const browser = await chromium.launch({ headless: true, args: ['--mute-audio'] });
-      await browser.close();
-      chromiumReady = true;
-    } catch (error) {
-      if (!/Executable doesn't exist/.test(error.message)) throw error;
-      await report('Downloading Chromium for PNG previews. This is only required once.');
-      const installer = chromiumInstallCommand();
-      await runLoggedCommand(installer.command, installer.args, { logPath, onProgress, signal });
-      const browser = await chromium.launch({ headless: true, args: ['--mute-audio'] });
-      await browser.close();
-      chromiumReady = true;
-    }
-  }
-  if (signal?.aborted) throw cancelledError();
-  await report('Headless Chromium is ready.');
-}

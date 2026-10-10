@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node.js';
 
-export async function startLsp(t, { script = fileURLToPath(new URL('../../src/lsp.mjs', import.meta.url)), stateDir, env = {}, requestTimeout = 8_000 } = {}) {
+export async function startLsp(t, { script = fileURLToPath(new URL('../../src/lsp.mjs', import.meta.url)), stateDir, env = {}, requestTimeout = 8_000, initializationOptions, onMessageRequest = () => null } = {}) {
   const root = stateDir ?? await mkdtemp(join(tmpdir(), 'excalidraw-lsp-test-'));
   if (!stateDir) t.after(() => rm(root, { recursive: true, force: true }));
   const child = spawn(process.execPath, [script, '--stdio'], { env: { ...process.env, EXCALIDRAW_STATE_DIR: root, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -18,7 +18,7 @@ export async function startLsp(t, { script = fileURLToPath(new URL('../../src/ls
   const record = event => { events.push(event); emitter.emit('event', event); };
   connection.onRequest('window/workDoneProgress/create', params => { record({ method: 'window/workDoneProgress/create', params }); return null; });
   connection.onRequest('window/showDocument', params => { record({ method: 'window/showDocument', params }); return { success: true }; });
-  connection.onRequest('window/showMessageRequest', params => { record({ method: 'window/showMessageRequest', params }); return null; });
+  connection.onRequest('window/showMessageRequest', params => { record({ method: 'window/showMessageRequest', params }); return onMessageRequest(params); });
   // JSON-RPC deliberately excludes $/ methods from the unhandled callback.
   connection.onNotification('$/progress', params => record({ method: '$/progress', params }));
   connection.onNotification((method, params) => record({ method, params }));
@@ -44,7 +44,7 @@ export async function startLsp(t, { script = fileURLToPath(new URL('../../src/ls
       emitter.on('event', listener);
     });
   };
-  const initialized = await request('initialize', { processId: process.pid, rootUri: null, capabilities: { window: { workDoneProgress: true, showDocument: { support: true } }, textDocument: { synchronization: { didSave: true } } } });
+  const initialized = await request('initialize', { processId: process.pid, rootUri: null, initializationOptions, capabilities: { window: { workDoneProgress: true, showDocument: { support: true } }, textDocument: { synchronization: { didSave: true } } } });
   connection.sendNotification('initialized', {});
   return { request, notify: (method, params) => connection.sendNotification(method, params), waitFor, events, initialized, stateDir: root };
 }

@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { isDrawingDocument, parseSceneText } from './scene.mjs';
 import { appendDownloadLog } from './downloads.mjs';
 import { createPreviewService } from './lsp-preview.mjs';
+import { createPreviewProgress } from './lsp-progress.mjs';
 
 const input = new StreamMessageReader(process.stdin);
 const connection = createConnection(ProposedFeatures.all, input, new StreamMessageWriter(process.stdout));
@@ -16,7 +17,7 @@ const documents = new TextDocuments(TextDocument);
 const stateDir = process.env.EXCALIDRAW_STATE_DIR || join(tmpdir(), `excalidraw-lsp-${process.pid}`);
 const logPath = join(stateDir, 'download.log');
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
-await appendDownloadLog(logPath, 'Excalidraw preview server started. Chromium is downloaded only on first PNG preview.');
+await appendDownloadLog(logPath, 'Excalidraw preview server started. Existing compatible browsers are reused; Chromium is downloaded only when needed.');
 const previews = createPreviewService(stateDir);
 const jobs = new Set();
 let pngBusy = false;
@@ -25,12 +26,17 @@ const commands = [
   ['Preview Excalidraw as PNG', 'excalidraw.preview.png'],
   ['Preview Excalidraw in Browser', 'excalidraw.preview.browser'],
   ['Excalidraw: View Download Log', 'excalidraw.downloadLog'],
+  ['Excalidraw: Browser Details', 'excalidraw.browserInfo'],
+  ['Excalidraw: Clear Extension Browser Cache', 'excalidraw.clearBrowserCache'],
 ];
 
-connection.onInitialize(() => ({
-  capabilities: { textDocumentSync: TextDocumentSyncKind.Full, codeActionProvider: true, executeCommandProvider: { commands: commands.map(([, command]) => command) } },
-  serverInfo: { name: 'Excalidraw Preview', version: '0.2.1' },
-}));
+connection.onInitialize(params => {
+  previews.configureBrowser(params.initializationOptions?.browser ?? {});
+  return {
+    capabilities: { textDocumentSync: TextDocumentSyncKind.Full, codeActionProvider: true, executeCommandProvider: { commands: commands.map(([, command]) => command) } },
+    serverInfo: { name: 'Excalidraw Preview', version: '0.2.1' },
+  };
+});
 
 async function validate(document) {
   let diagnostics = [];
@@ -63,6 +69,23 @@ const showLog = () => show(pathToFileURL(logPath).href);
 
 connection.onExecuteCommand(async ({ command, arguments: args }) => {
   if (command === 'excalidraw.downloadLog') return showLog();
+  if (command === 'excalidraw.browserInfo') return show(pathToFileURL(await previews.browserInfoFile()).href);
+  if (command === 'excalidraw.clearBrowserCache') {
+    if (pngBusy) throw new ResponseError(LSPErrorCodes.RequestFailed, 'A PNG preview/download is busy. Wait before clearing its browser cache.');
+    const { ownedCache } = await previews.browserDetails();
+    if (!ownedCache.clearable) throw new ResponseError(LSPErrorCodes.RequestFailed, ownedCache.reason);
+    const size = (ownedCache.bytes / 1024 / 1024).toFixed(1);
+    const action = await connection.window.showWarningMessage(
+      `Remove only Excalidraw's downloaded browser cache (${size} MiB)?\n${ownedCache.path}\nSystem browsers and shared Playwright caches will NOT be changed. Close any previews running in older extension versions first.`,
+      { title: 'Remove extension cache' }, { title: 'Cancel' },
+    );
+    if (action?.title !== 'Remove extension cache') return { cleared: false };
+    if (pngBusy) throw new ResponseError(LSPErrorCodes.RequestFailed, 'A PNG preview/download started while confirmation was open. Browser cache was not cleared.');
+    try { await previews.clearBrowserCache(); }
+    catch (error) { throw new ResponseError(LSPErrorCodes.RequestFailed, error.message); }
+    await appendDownloadLog(logPath, `User-confirmed cleanup of extension-owned browser cache: ${ownedCache.path}`);
+    return { cleared: true, path: ownedCache.path };
+  }
   if (!['excalidraw.preview.png', 'excalidraw.preview.browser'].includes(command)) throw new ResponseError(LSPErrorCodes.RequestFailed, 'Unknown Excalidraw command.');
   const uri = args?.[0];
   const document = typeof uri === 'string' ? documents.get(uri) : undefined;
@@ -72,20 +95,11 @@ connection.onExecuteCommand(async ({ command, arguments: args }) => {
   if (mode === 'png') pngBusy = true;
   const controller = new AbortController();
   jobs.add(controller);
-  let progress;
-  let cancellation;
+  const progress = createPreviewProgress(connection, { controller, showLog, isActive: () => jobs.has(controller), isStopping: () => stopping });
   try {
     await appendDownloadLog(logPath, `Excalidraw ${mode.toUpperCase()} preview requested.`);
-    progress = await connection.window.createWorkDoneProgress();
-    cancellation = progress.token.onCancellationRequested(() => controller.abort());
-    progress.begin(`Excalidraw ${mode.toUpperCase()} preview`, undefined, 'Preparing preview. View Download Log is available from code actions.', true);
-    const onProgress = report => {
-      if (stopping) return;
-      connection.console.log(report.message);
-      if (report.percentage != null) progress.report(report.percentage, report.message);
-      else progress.report(report.message);
-    };
-    const output = await previews.preview(() => documents.get(uri), { mode, logPath, onProgress, signal: controller.signal });
+    await progress.phase(mode === 'png' ? 'checking' : 'browser');
+    const output = await previews.preview(() => documents.get(uri), { mode, logPath, onProgress: report => progress.report(report), onPhase: phase => progress.phase(phase), signal: controller.signal });
     if (controller.signal.aborted) throw new Error('Excalidraw preview cancelled.');
     await appendDownloadLog(logPath, `${mode.toUpperCase()} preview is ready.`);
     return await show(output.uri, output.external);
@@ -98,8 +112,7 @@ connection.onExecuteCommand(async ({ command, arguments: args }) => {
     }
     throw new ResponseError(controller.signal.aborted ? LSPErrorCodes.RequestCancelled : LSPErrorCodes.RequestFailed, error.message);
   } finally {
-    cancellation?.dispose();
-    progress?.done();
+    progress.done();
     jobs.delete(controller);
     if (mode === 'png') pngBusy = false;
   }

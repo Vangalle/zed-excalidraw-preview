@@ -4,10 +4,11 @@ import { pathToFileURL } from 'node:url';
 import { parseSceneText } from './scene.mjs';
 import { renderPng } from './render.mjs';
 import { startBrowserServer } from './cli.mjs';
-import { ensureChromium } from './downloads.mjs';
+import { createBrowserManager } from './browser-manager.mjs';
 
 export function createPreviewService(stateDir) {
   const browsers = [];
+  let manager = createBrowserManager({ stateDir });
   let closing;
   const checkAbort = signal => { if (signal?.aborted || closing) throw new Error('Excalidraw preview cancelled.'); };
   const documentName = document => {
@@ -25,8 +26,23 @@ export function createPreviewService(stateDir) {
     return { file, directory, uri: document.uri, version: document.version };
   }
   return {
-    async preview(getDocument, { mode, logPath, onProgress, signal }) {
-      if (mode === 'png') await ensureChromium({ logPath, onProgress, signal });
+    configureBrowser(options = {}) {
+      if (typeof options !== 'object' || options === null || Array.isArray(options)) throw new Error('browser settings must be an object.');
+      manager = createBrowserManager({ stateDir, mode: options.mode, executablePath: options.executablePath });
+    },
+    browserDetails: () => manager.details(),
+    browserInfoFile: () => manager.writeDetails(),
+    clearBrowserCache: () => manager.clearOwnedCache(),
+    async preview(getDocument, { mode, logPath, onProgress = () => {}, onPhase = () => {}, signal }) {
+      let selected;
+      if (mode === 'png') {
+        // Reject malformed input before any installation; take the actual
+        // snapshot after setup, so edits made during a download are preserved.
+        const current = getDocument();
+        if (!current) throw new Error('The drawing document is no longer open.');
+        await parseSceneText(current.getText(), { markdown: new URL(current.uri).pathname.toLowerCase().endsWith('.md') });
+        selected = await manager.resolve({ logPath, onProgress, onPhase, signal });
+      }
       checkAbort(signal);
       const document = getDocument();
       if (!document) throw new Error('The drawing document is no longer open.');
@@ -35,9 +51,16 @@ export function createPreviewService(stateDir) {
       let service;
       try {
         checkAbort(signal);
-        onProgress({ message: mode === 'png' ? 'Rendering the current editor snapshot as PNG.' : 'Starting the local read-only browser preview.' });
+        if (mode !== 'png') onProgress({ message: 'Starting the local read-only browser preview.' });
         if (mode === 'png') {
-          const output = await renderPng(source.file);
+          const release = await manager.acquireLease(selected);
+          let output;
+          try {
+            await onPhase('render');
+            onProgress({ message: 'Rendering the current editor snapshot as PNG.' });
+            checkAbort(signal);
+            output = await renderPng(source.file, { launchOptions: selected.launchOptions });
+          } finally { await release(); }
           const current = getDocument();
           if (signal?.aborted || !current || current.version !== source.version) {
             await rm(dirname(output), { recursive: true, force: true });

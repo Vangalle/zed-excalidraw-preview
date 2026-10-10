@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { startServer } from './server.mjs';
 
-export async function renderPng(file) {
+export async function renderPng(file, { launchOptions = {} } = {}) {
   const server = await startServer(file);
   let browser;
   let directory;
   let timer;
   try {
-    browser = await chromium.launch({ headless: true, args: ['--mute-audio'] });
+    browser = await chromium.launch({ ...launchOptions, headless: true, args: ['--mute-audio'] });
     const context = await browser.newContext({ serviceWorkers: 'block' });
     const origin = new URL(server.url).origin;
     await context.route('**/*', route => {
